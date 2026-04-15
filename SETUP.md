@@ -209,7 +209,7 @@ uv run python main.py
 #### Terminal 3: LangGraph Agent
 ```bash
 cd langgraph_agent
-langgraph dev --host 0.0.0.0 --port 8000
+langgraph dev 
 ```
 **Status**: Agent running on http://localhost:8000
 
