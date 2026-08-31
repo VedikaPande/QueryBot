@@ -146,13 +146,20 @@ but you can do it ahead of time:
 
 ```bash
 cd langgraph_agent
-docker build -f querybot_agent/Dockerfile.chart-executor -t querybot-chart-executor querybot_agent/
+langgraph dev 
 ```
+**Status**: Agent running on http://localhost:8000
 
-## 5. Run
+#### Terminal 4: React Frontend
+```bash
+cd client
+npm run dev
+```
+**Status**: Frontend running on http://localhost:5173
 
-Four terminals, in this order — the agent and the API both depend on the SQLite
-service being up:
+### Production Mode
+
+#### 1. Build all services:
 
 ```bash
 # Terminal 1 — SQLite dataset service
@@ -192,53 +199,37 @@ cd client          && npm run lint && npx tsc --noEmit -p tsconfig.app.json
 Build the frontend and the SQLite service:
 
 ```bash
-cd client && npm run build          # static files in dist/
-cd sqlite_server && npm run build   # compiled JS in dist/
+# Check Flask server
+curl http://localhost:5000/health
+
+# Check SQLite server
+curl http://localhost:3001/health
+
+# Check LangGraph agent
+curl http://localhost:8000/health
+
+# Check if frontend is accessible
+curl http://localhost:5173
 ```
 
-Set `FLASK_ENV=production` and `NODE_ENV=production`. Both services validate
-their configuration at start-up and **refuse to boot** if any of the following
-is wrong, rather than running in a silently insecure state:
+Expected responses should return status 200 with health information.
 
-- `SECRET_KEY` or `JWT_SECRET_KEY` unset
-- `CORS_ORIGINS` unset or set to `*`
-- `SERVICE_TOKEN` unset
-- `DATABASE_URL` still pointing at SQLite
+### API Keys Setup
 
-Additional production requirements:
+#### Getting Groq API Key
+1. Visit [console.groq.com](https://console.groq.com)
+2. Sign up or log in
+3. Navigate to API Keys section
+4. Create a new API key
+5. Copy and paste into `langgraph_agent/.env`
 
-- **Serve over HTTPS.** Cookies are issued with `Secure` in production and browsers will drop them over plain HTTP.
-- **Do not expose ports 3001 or 8000 publicly.** Only the Flask API and the static client should be reachable.
-- **Run Flask under a real WSGI server** (`gunicorn`, `waitress`) rather than the development server.
-- **Persist the uploads directory** if you want datasets to survive a restart, or accept that they are ephemeral.
-
-## Troubleshooting
-
-**"Unauthorized" from the SQLite service**
-`SERVICE_TOKEN` differs between services. It must be byte-identical in all three
-`.env` files.
-
-**"Dataset not found" right after uploading**
-Uploads expire after `DB_FILE_RETENTION` (4 hours by default). Re-upload, or
-raise the value.
-
-**Charts never appear**
-Check that Docker is running (`docker ps`). The agent logs the reason at start-up.
-Set `CHART_DOCKER_ENABLED=false` to suppress chart attempts entirely.
-
-**`sqlite3.OperationalError: unable to open database file`**
-A relative `DATABASE_URL` is resolved against the Flask instance folder. Use an
-absolute path, e.g. `sqlite:///C:/path/to/querybot.db`.
-
-**CORS errors in the browser console**
-The frontend origin must appear in `CORS_ORIGINS` in `server/.env`. It cannot be
-`*`, because authentication uses cookies.
-
-**"The query was adjusted before running"**
-Expected: the agent validated the generated SQL and corrected it. Open the SQL tab
-to see what changed, and edit and re-run it if the correction was wrong.
+#### Getting LangSmith API Key
+1. Visit [smith.langchain.com](https://smith.langchain.com)
+2. Sign up or log in
+3. Go to Settings > API Keys
+4. Create a new API key
+5. Copy and paste into `langgraph_agent/.env` and `server/.env`
 
 ---
 
-Something still not working? Check each service's logs — all four log at start-up
-what they resolved their configuration to.
+**Congratulations! 🎉** Your QueryBot development environment should now be ready to use.

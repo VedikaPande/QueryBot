@@ -129,67 +129,16 @@ reachable from the public internet.
 
 ## Quick start
 
-Needs Docker and one model provider key. Groq is the default and
-[free](https://console.groq.com); OpenAI, Anthropic and Gemini work too — set
-`LLM_PROVIDER` and that provider's key instead.
+> **⚠️ Need help?** Check the [SETUP.md](./SETUP.md) for detailed installation guide, troubleshooting, and configuration options.
+ <img width="1919" height="998" alt="Screenshot 2025-11-14 223617" src="https://github.com/user-attachments/assets/762264f8-48c1-4472-8e08-392adf325366" />
 
-```bash
-make setup                  # writes .env with generated secrets
-# add your GROQ_API_KEY to .env
-make up                     # builds and starts everything
-```
+<img width="1919" height="996" alt="Screenshot 2025-11-14 224011" src="https://github.com/user-attachments/assets/7e9fb0fc-2f1f-48dc-8739-c794553d2c0e" />
 
-Open http://localhost:8080. The API reference is at http://localhost:8080/api/docs.
+<img width="1891" height="995" alt="Screenshot 2025-11-14 224055" src="https://github.com/user-attachments/assets/11597fff-d011-4d3c-b541-0bcb317b5cb5" />
+<img width="1918" height="989" alt="Screenshot 2025-11-14 224117" src="https://github.com/user-attachments/assets/075684ff-13eb-4688-996a-6b08224ed8dd" />
+<img<img width="1919" height="988" alt="Screenshot 2025-11-14 224227" src="https://github.com/user-attachments/assets/525613d7-96d8-4e2b-a4b8-8987ae8b99e0" />
+<i<img width="1919" height="988" alt="Screenshot 2025-11-14 224227" src="https://github.com/user-attachments/assets/18f9c8d6-f654-4c96-99e7-82a437e87ae4" />
+<img width="1919" height="988" alt="Screenshot 2025-11-14 224227" src="https://github.com/user-attachments/assets/9bbcd0b5-a5b9-460c-bd62-668bf3fda0c2" />
 
-Only the client port is published — Postgres, Redis, the dataset service and the
-agent stay on the internal network.
 
-Prefer to run the services natively? See **[SETUP.md](./SETUP.md)**.
-
-## Tests
-
-```bash
-make test          # every suite
-make check         # everything CI runs: typecheck + lint + tests
-```
-
-| Suite | Covers |
-|---|---|
-| **Client** (71) | SSE stream merging, CSV formula-injection escaping, table sorting, profile and dashboard rendering |
-| **SQLite service** (59) | SQL allow-list, path traversal, CSV sanitisation, profiling accuracy against a real database |
-| **API** (58) | Authentication, dataset and dashboard ownership, share-link revocation, conversation memory, rate limits, cascade integrity |
-| **Agent** (107) | Refinement intent parsing, provider selection, self-correction routing, state-schema persistence, chart codegen |
-
-## Engineering
-
-- **CI/CD** — GitHub Actions across four services with path filtering, Postgres and Redis service containers, migration round-trip verification and image builds
-- **Caching** — Redis-backed schema and preview caching that degrades to a no-op rather than failing requests
-- **Rate limiting** — per-user limits on the endpoints that spend money
-- **Docs** — [architecture and decision records](./docs/ARCHITECTURE.md), an OpenAPI 3.1 spec with a browsable reference
-
-## Documentation
-
-| | |
-|---|---|
-| [SETUP.md](./SETUP.md) | Running the services natively |
-| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | System design, data model, security model, 8 decision records |
-| [CONTRIBUTING.md](./CONTRIBUTING.md) | Conventions and workflow |
-| `/api/docs` | Interactive API reference |
-
-## Screenshots
-
-<img width="1919" alt="Landing page" src="https://github.com/user-attachments/assets/762264f8-48c1-4472-8e08-392adf325366" />
-
-<img width="1919" alt="Playground" src="https://github.com/user-attachments/assets/7e9fb0fc-2f1f-48dc-8739-c794553d2c0e" />
-
-<img width="1891" alt="Chart output" src="https://github.com/user-attachments/assets/11597fff-d011-4d3c-b541-0bcb317b5cb5" />
-
-<img width="1918" alt="Data table" src="https://github.com/user-attachments/assets/075684ff-13eb-4688-996a-6b08224ed8dd" />
-
-<img width="1919" alt="Insights" src="https://github.com/user-attachments/assets/525613d7-96d8-4e2b-a4b8-8987ae8b99e0" />
-
-<img width="1919" alt="Workflow detail" src="https://github.com/user-attachments/assets/9bbcd0b5-a5b9-460c-bd62-668bf3fda0c2" />
-
-## Licence
-
-ISC
+ 
