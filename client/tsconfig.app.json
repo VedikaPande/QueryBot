@@ -24,7 +24,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
 
-    "baseUrl": ".",
+    /* Resolved relative to this file; baseUrl is deprecated in TypeScript 6. */
     "paths": {
       "@/*": [
         "./src/*"

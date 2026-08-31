@@ -1,21 +1,35 @@
-import { useLocation } from "react-router-dom";
-import { useEffect } from "react";
+import { Link, useLocation } from 'react-router-dom';
+import { Compass, Home } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 const NotFound = () => {
-  const location = useLocation();
-
-  useEffect(() => {
-    console.error("404 Error: User attempted to access non-existent route:", location.pathname);
-  }, [location.pathname]);
+  const { pathname } = useLocation();
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">404</h1>
-        <p className="mb-4 text-xl text-gray-600">Oops! Page not found</p>
-        <a href="/" className="text-blue-500 underline hover:text-blue-700">
-          Return to Home
-        </a>
+    <div className="bg-background flex min-h-dvh flex-col items-center justify-center gap-5 p-8 text-center">
+      <div className="bg-muted rounded-2xl p-4">
+        <Compass className="text-muted-foreground h-8 w-8" />
+      </div>
+
+      <div>
+        <p className="gradient-text text-5xl font-bold">404</p>
+        <h1 className="mt-3 text-xl font-semibold">This page does not exist</h1>
+        <p className="text-muted-foreground mt-2 text-sm">
+          Nothing lives at{' '}
+          <code className="bg-muted rounded px-1.5 py-0.5 text-xs">{pathname}</code>
+        </p>
+      </div>
+
+      <div className="flex gap-2">
+        <Button asChild>
+          <Link to="/">
+            <Home className="h-4 w-4" />
+            Go home
+          </Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link to="/playground">Open the playground</Link>
+        </Button>
       </div>
     </div>
   );

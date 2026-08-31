@@ -1,0 +1,780 @@
+openapi: 3.1.0
+
+info:
+  title: QueryBot API
+  version: 1.0.0
+  description: |
+    Natural-language analytics over uploaded datasets.
+
+    ## Authentication
+    Sign-in sets two httpOnly cookies, `access_token` and `refresh_token`. The
+    browser attaches them automatically; no token is ever readable from
+    JavaScript. When the access token expires the client calls
+    `POST /auth/refresh` once and replays the original request.
+
+    ## Authorization
+    Datasets belong to the user who uploaded them. Every endpoint that reads a
+    dataset verifies ownership and answers `404` — not `403` — for a dataset
+    owned by someone else, so identifiers cannot be probed for existence.
+
+    ## Rate limits
+    `POST /langgraph/run` calls a paid model several times per question and is
+    limited to 20 per hour per user. Responses carry `X-RateLimit-*` headers.
+  license:
+    name: ISC
+
+servers:
+  - url: http://localhost:8080/api
+    description: Docker Compose
+  - url: http://localhost:5000/api
+    description: Local development
+
+tags:
+  - name: Authentication
+  - name: Datasets
+  - name: Analysis
+  - name: Conversations
+  - name: Dashboards
+  - name: Meta
+
+components:
+  securitySchemes:
+    accessCookie:
+      type: apiKey
+      in: cookie
+      name: access_token
+
+  schemas:
+    Success:
+      type: object
+      required: [success, message]
+      properties:
+        success: { type: boolean, const: true }
+        message: { type: string }
+        data: { type: object }
+
+    Error:
+      type: object
+      required: [success, message]
+      properties:
+        success: { type: boolean, const: false }
+        message: { type: string }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        fullname: { type: string }
+        email: { type: string, format: email }
+        created_at: { type: string, format: date-time }
+        is_active: { type: boolean }
+
+    Dataset:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        uuid:
+          type: string
+          format: uuid
+          description: Identifier used when querying this dataset.
+        file_name: { type: string }
+        size_bytes: { type: integer }
+        table_count: { type: integer }
+        row_count: { type: integer }
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+          description: Uploads are deleted after the retention window.
+
+    Table:
+      type: object
+      properties:
+        name: { type: string }
+        rowCount: { type: integer }
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              type: { type: string }
+              nullable: { type: boolean }
+              primaryKey: { type: boolean }
+
+    ColumnProfile:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string, description: The type SQLite declares. }
+        kind:
+          type: string
+          enum: [numeric, text, temporal, boolean]
+          description: Inferred from the values, since a CSV date column arrives as TEXT.
+        nullCount: { type: integer }
+        nullPercent: { type: number }
+        distinctCount: { type: integer }
+        isUnique: { type: boolean }
+        isIdentifier:
+          type: boolean
+          description: >
+            Identifies rows rather than measuring anything - a declared primary
+            key, or a unique integer with an identifier-like name. Excluded from
+            correlations, where it would only produce artefacts of insertion order.
+        min: { type: number }
+        max: { type: number }
+        mean: { type: number }
+        median: { type: number }
+        stdev: { type: number }
+        outlierCount:
+          type: integer
+          description: Values beyond three interquartile ranges from the middle 50%.
+        topValues:
+          type: array
+          description: Present for low-cardinality non-numeric columns.
+          items:
+            type: object
+            properties:
+              value: { type: string }
+              count: { type: integer }
+        histogram:
+          type: array
+          description: Bucketed counts for numeric columns.
+          items:
+            type: object
+            properties:
+              start: { type: number }
+              end: { type: number }
+              count: { type: integer }
+
+    Message:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        role: { type: string, enum: [user, assistant, error] }
+        content: { type: string }
+        sql_query: { type: string }
+        visualization:
+          type: string
+          enum: [bar, horizontal_bar, line, pie, scatter, histogram, box, heatmap, none]
+        insights: { type: string }
+        chart_image_base64:
+          type: string
+          description: Rendered chart as a base64 PNG.
+        result_rows:
+          type: array
+          items: { type: array }
+        created_at: { type: string, format: date-time }
+
+    Conversation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        dataset_uuid: { type: [string, 'null'], format: uuid }
+        dataset_name: { type: [string, 'null'] }
+        message_count: { type: integer }
+        updated_at: { type: string, format: date-time }
+
+  responses:
+    Unauthorized:
+      description: No valid session.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Not found, or owned by another user.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Too many requests.
+      headers:
+        X-RateLimit-Remaining: { schema: { type: integer } }
+        Retry-After: { schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+security:
+  - accessCookie: []
+
+paths:
+  /auth/signup:
+    post:
+      tags: [Authentication]
+      summary: Create an account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fullname, email, password, confirm_password]
+              properties:
+                fullname: { type: string, minLength: 2, maxLength: 100 }
+                email: { type: string, format: email }
+                password:
+                  type: string
+                  minLength: 8
+                  description: Needs upper and lower case, a digit and a symbol.
+                confirm_password: { type: string }
+      responses:
+        '201':
+          description: Created; sets the auth cookies.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Success' }
+        '409':
+          description: That email is already registered.
+        '422':
+          description: Validation failed.
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Sign in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Signed in; sets the auth cookies.
+        '401':
+          description: Invalid credentials.
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Issue a new access token from the refresh cookie
+      responses:
+        '200': { description: A new access cookie was set. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/check:
+    get:
+      tags: [Authentication]
+      summary: Return the signed-in user
+      responses:
+        '200':
+          description: The current user.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Sign out and clear the cookies
+      responses:
+        '200': { description: Signed out. }
+
+  /datasets:
+    get:
+      tags: [Datasets]
+      summary: List the caller's datasets
+      responses:
+        '200':
+          description: Datasets, most recently used first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          datasets:
+                            type: array
+                            items: { $ref: '#/components/schemas/Dataset' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Datasets]
+      summary: Upload a dataset
+      description: |
+        Accepts `.csv`, `.sqlite` and `.db`, up to 100MB. CSV files are converted
+        to SQLite with column types inferred from the data, so numeric columns
+        sort and aggregate correctly rather than comparing as text.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Uploaded.
+        '400': { description: Unsupported or unreadable file. }
+        '413': { description: File too large. }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /datasets/{uuid}/schema:
+    get:
+      tags: [Datasets]
+      summary: Get tables and columns
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Structured schema.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          tables:
+                            type: array
+                            items: { $ref: '#/components/schemas/Table' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /datasets/{uuid}/profile:
+    get:
+      tags: [Datasets]
+      summary: Statistically profile a dataset
+      description: |
+        Per-column statistics computed by scanning the data: type inference,
+        missing-value counts, cardinality, min/max/mean/median/stdev, outlier
+        counts, value distributions, duplicate rows, and Pearson correlations
+        between numeric columns.
+
+        Computed entirely in SQL — no model call — so it is fast and exact, and
+        cached for the dataset's lifetime since the underlying data is immutable
+        once uploaded.
+
+        `highlights` contains plain-language observations worth acting on, such as
+        a column that is mostly empty, one that holds a single value throughout,
+        or a distribution skewed enough that the median is the fairer summary.
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The dataset profile.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          tables:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                table: { type: string }
+                                rowCount: { type: integer }
+                                duplicateRows: { type: integer }
+                                columns:
+                                  type: array
+                                  items: { $ref: '#/components/schemas/ColumnProfile' }
+                          correlations:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                a: { type: string }
+                                b: { type: string }
+                                coefficient: { type: number }
+                          highlights:
+                            type: array
+                            items: { type: string }
+                          computedMs: { type: integer }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /datasets/{uuid}/preview/{table}:
+    get:
+      tags: [Datasets]
+      summary: Preview the first rows of a table
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: table
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Preview rows. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /datasets/{uuid}:
+    delete:
+      tags: [Datasets]
+      summary: Delete a dataset
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Deleted. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /langgraph/run:
+    post:
+      tags: [Analysis]
+      summary: Ask a question about a dataset
+      description: |
+        Streams Server-Sent Events. Each event is a JSON object keyed by the
+        workflow node that produced it, letting the client show progress as the
+        agent classifies the question, writes SQL, runs it, renders a chart and
+        derives insights. The final event is `{"done": true, "conversationId": "..."}`.
+
+        Omit `conversationId` to start a new conversation; supply it to ask a
+        follow-up, and earlier turns are passed to the agent as context.
+
+        Rate limited to 20 per hour per user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question, databaseUuid]
+              properties:
+                question: { type: string, maxLength: 2000 }
+                databaseUuid: { type: string, format: uuid }
+                conversationId: { type: [string, 'null'], format: uuid }
+      responses:
+        '200':
+          description: An SSE stream.
+          headers:
+            X-Conversation-Id:
+              schema: { type: string, format: uuid }
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '400': { description: Missing question or dataset. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /langgraph/query:
+    post:
+      tags: [Analysis]
+      summary: Run SQL directly
+      description: |
+        Executes a statement against the caller's dataset without invoking the
+        model, which is what makes the generated SQL editable and instantly
+        re-runnable. Only a single read-only `SELECT` or `WITH` is accepted;
+        `ATTACH`, `PRAGMA` and `load_extension` are rejected and the database is
+        opened read-only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query, databaseUuid]
+              properties:
+                query: { type: string }
+                databaseUuid: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Query results.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          columns: { type: array, items: { type: string } }
+                          results: { type: array, items: { type: array } }
+                          rowCount: { type: integer }
+                          truncated: { type: boolean }
+                          durationMs: { type: integer }
+        '400': { description: Rejected or invalid SQL. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /conversations:
+    get:
+      tags: [Conversations]
+      summary: List saved conversations
+      responses:
+        '200':
+          description: Conversations, most recently updated first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          conversations:
+                            type: array
+                            items: { $ref: '#/components/schemas/Conversation' }
+
+  /conversations/{id}:
+    get:
+      tags: [Conversations]
+      summary: Get a conversation with its full history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The conversation and its messages.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          conversation:
+                            allOf:
+                              - $ref: '#/components/schemas/Conversation'
+                              - type: object
+                                properties:
+                                  messages:
+                                    type: array
+                                    items: { $ref: '#/components/schemas/Message' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Conversations]
+      summary: Rename a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, maxLength: 200 }
+      responses:
+        '200': { description: Renamed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Conversations]
+      summary: Delete a conversation and its messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Deleted. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /dashboards:
+    get:
+      tags: [Dashboards]
+      summary: List the caller's dashboards
+      responses:
+        '200': { description: Dashboards, most recently updated first. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Dashboards]
+      summary: Create an empty dashboard
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 200 }
+      responses:
+        '201': { description: Created. }
+
+  /dashboards/{id}:
+    get:
+      tags: [Dashboards]
+      summary: Get a dashboard with its tiles
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: The dashboard and its tiles. }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Dashboards]
+      summary: Rename a dashboard or toggle public sharing
+      description: |
+        Setting `shared: true` mints a share token if none exists; setting it
+        false revokes the link immediately. Re-enabling produces a *different*
+        token, so a revoked link never comes back to life.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 200 }
+                description: { type: string }
+                shared: { type: boolean }
+      responses:
+        '200': { description: Updated. }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Dashboards]
+      summary: Delete a dashboard
+      description: Removes the dashboard and its tiles. The underlying analyses are untouched.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Deleted. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /dashboards/{id}/tiles:
+    post:
+      tags: [Dashboards]
+      summary: Pin an analysis onto a dashboard
+      description: |
+        The message must belong to the caller. Without that check a user could pin
+        another account's result and then publish it through a share link.
+
+        A tile references the message rather than copying it, so there is one copy
+        of the answer, SQL, chart and rows.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messageId]
+              properties:
+                messageId: { type: string, format: uuid }
+                view: { type: string, enum: [chart, table, answer] }
+                size: { type: string, enum: [small, medium, large, full] }
+                title: { type: string, maxLength: 200 }
+      responses:
+        '201': { description: Pinned. }
+        '400': { description: Invalid identifier, or the tile limit was reached. }
+        '404': { description: Dashboard or result not found, or owned by another user. }
+
+  /dashboards/{id}/tiles/order:
+    patch:
+      tags: [Dashboards]
+      summary: Reorder tiles
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tileIds]
+              properties:
+                tileIds: { type: array, items: { type: string, format: uuid } }
+      responses:
+        '200': { description: The dashboard, with tiles in the new order. }
+
+  /dashboards/{id}/tiles/{tileId}:
+    patch:
+      tags: [Dashboards]
+      summary: Rename, re-view or resize a tile
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: tileId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 200 }
+                view: { type: string, enum: [chart, table, answer] }
+                size: { type: string, enum: [small, medium, large, full] }
+      responses:
+        '200': { description: Updated. }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Dashboards]
+      summary: Unpin a tile
+      description: The underlying analysis is untouched.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: tileId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /public/dashboards/{token}:
+    get:
+      tags: [Dashboards]
+      summary: Read a publicly shared dashboard
+      description: |
+        Deliberately unauthenticated: the token is the capability. Rate limited by
+        IP so the token space cannot be probed.
+
+        The response omits the SQL, the message ids, the token and every ownership
+        field, so a link conveys the findings and nothing else. A revoked token
+        returns the same 404 as one that never existed.
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: The shared dashboard. }
+        '404': { description: Unknown or revoked link. }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /openapi.yaml:
+    get:
+      tags: [Meta]
+      summary: This document
+      security: []
+      responses:
+        '200': { description: The OpenAPI specification. }

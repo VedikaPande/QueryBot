@@ -2,7 +2,7 @@
 Marshmallow schemas for user data validation and serialization.
 """
 import re
-from marshmallow import Schema, fields, validate, validates, validates_schema, ValidationError
+from marshmallow import Schema, fields, validate, ValidationError
 
 
 def validate_password_strength(password):
@@ -19,7 +19,7 @@ def validate_password_strength(password):
 
 class UserSignupSchema(Schema):
     """Schema for user signup validation."""
-    
+
     fullname = fields.Str(
         required=True,
         validate=[
@@ -31,7 +31,7 @@ class UserSignupSchema(Schema):
         ],
         error_messages={'required': 'Fullname is required'}
     )
-    
+
     email = fields.Email(
         required=True,
         validate=validate.Length(max=255, error="Email must be less than 255 characters"),
@@ -40,7 +40,7 @@ class UserSignupSchema(Schema):
             'invalid': 'Please enter a valid email address'
         }
     )
-    
+
     password = fields.Str(
         required=True,
         validate=[
@@ -49,26 +49,26 @@ class UserSignupSchema(Schema):
         ],
         error_messages={'required': 'Password is required'}
     )
-    
+
     confirm_password = fields.Str(
         required=True,
         error_messages={'required': 'Password confirmation is required'}
     )
-    
+
     def load(self, json_data, *args, **kwargs):
         """Override load to add password confirmation validation."""
         data = super().load(json_data, *args, **kwargs)
-        
+
         # Validate password confirmation
         if data.get('password') != data.get('confirm_password'):
             raise ValidationError({'confirm_password': ['Passwords do not match']})
-        
+
         return data
 
 
 class UserLoginSchema(Schema):
     """Schema for user login validation."""
-    
+
     email = fields.Email(
         required=True,
         error_messages={
@@ -76,7 +76,7 @@ class UserLoginSchema(Schema):
             'invalid': 'Please enter a valid email address'
         }
     )
-    
+
     password = fields.Str(
         required=True,
         error_messages={'required': 'Password is required'}
@@ -85,7 +85,7 @@ class UserLoginSchema(Schema):
 
 class UserResponseSchema(Schema):
     """Schema for user response serialization."""
-    
+
     id = fields.Str(dump_only=True)
     fullname = fields.Str(dump_only=True)
     email = fields.Email(dump_only=True)
@@ -96,7 +96,7 @@ class UserResponseSchema(Schema):
 
 class AuthResponseSchema(Schema):
     """Schema for authentication response."""
-    
+
     user = fields.Nested(UserResponseSchema, dump_only=True)
     access_token = fields.Str(dump_only=True)
     refresh_token = fields.Str(dump_only=True, allow_none=True)

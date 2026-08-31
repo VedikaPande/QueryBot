@@ -215,3 +215,5 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .langgraph_api
+# Rendered charts (transient; base64 is returned to the caller)
+generated_charts/

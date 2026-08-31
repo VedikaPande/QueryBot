@@ -146,3 +146,6 @@ vite.config.ts.timestamp-*
 
 # Temporary files Storage
 uploads/
+
+# Uploaded datasets — user data, never commit
+uploads/

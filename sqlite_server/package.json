@@ -8,29 +8,31 @@
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
     "clean": "tsc --build --clean",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "better-sqlite3": "^12.4.1",
-    "cors": "^2.8.5",
-    "csv-parser": "^3.2.0",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
-    "multer": "^2.0.2",
-    "uuid": "^13.0.0"
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
+    "csv-parser": "^3.2.1",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "multer": "^2.2.0",
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.5",
-    "@types/multer": "^2.0.0",
-    "@types/uuid": "^10.0.0",
-    "nodemon": "^3.1.11",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.2.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.10"
   }
 }

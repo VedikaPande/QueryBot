@@ -64,12 +64,12 @@ const Hero = () => {
               <Sparkles className="w-4 h-4 text-primary" />
               <span className="text-sm font-medium">AI-Powered Data Intelligence</span>
             </div>
-            
+
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold mb-6 leading-tight">
               Ask Your Data{" "}
               <span className="gradient-text">Get Instant Insights</span>
             </h1>
-            
+
             <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto lg:mx-0">
               Upload data or connect a database and ask questions in English to get charts, SQL, or insights instantly.
             </p>
@@ -127,9 +127,12 @@ const Hero = () => {
           </div>
 
           {/* Right Visual */}
-          <div className="relative animate-scale-in group">
-            <div className="glass-card rounded-2xl overflow-hidden shadow-[0_20px_60px_-15px_rgba(0,168,120,0.4)]">
-              <ImageSlideshow 
+          <div className="animate-scale-in group relative">
+            <div
+              className="glass-card overflow-hidden rounded-2xl"
+              style={{ boxShadow: 'var(--shadow-elevated)' }}
+            >
+              <ImageSlideshow
                 images={heroImages}
                 autoPlay={true}
                 autoPlayInterval={4500}
@@ -140,7 +143,7 @@ const Hero = () => {
                 className="w-full"
               />
             </div>
-            
+
             {/* Floating Cards */}
             <div className="absolute -top-4 -left-4 glass-card p-4 rounded-xl animate-float" style={{ animationDelay: "1s" }}>
               <div className="flex items-center gap-2">
@@ -148,7 +151,7 @@ const Hero = () => {
                 <span className="text-sm font-medium">SQL Generated</span>
               </div>
             </div>
-            
+
             <div className="absolute -bottom-4 -right-4 glass-card p-4 rounded-xl animate-float" style={{ animationDelay: "3s" }}>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-accent" />

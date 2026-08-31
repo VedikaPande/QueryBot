@@ -1,28 +1,26 @@
 import { Request, Response, NextFunction } from 'express';
+import { logger } from '../utils/logger';
 
-export const requestLogger = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
+/** Log one line per completed request. */
+export const requestLogger = (req: Request, res: Response, next: NextFunction): void => {
   const start = Date.now();
-  const { method, originalUrl, ip } = req;
-  const userAgent = req.get('User-Agent') || '';
 
-  // Log the incoming request
-  console.log(`${method} ${originalUrl} - ${ip} - ${userAgent}`);
+  res.on('finish', () => {
+    const context = {
+      method: req.method,
+      path: req.originalUrl,
+      statusCode: res.statusCode,
+      durationMs: Date.now() - start,
+    };
 
-  // Capture the original res.end to log response time
-  const originalEnd = res.end;
-  res.end = function (chunk?: any, encoding?: any): Response {
-    const duration = Date.now() - start;
-    const { statusCode } = res;
-    
-    // Log the response
-    console.log(`${method} ${originalUrl} - ${statusCode} - ${duration}ms`);
-    
-    return originalEnd.call(this, chunk, encoding);
-  };
+    if (res.statusCode >= 500) {
+      logger.error('Request failed', context);
+    } else if (res.statusCode >= 400) {
+      logger.warn('Request rejected', context);
+    } else {
+      logger.info('Request completed', context);
+    }
+  });
 
   next();
 };

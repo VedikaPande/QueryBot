@@ -3,20 +3,22 @@ import sqliteRoutes from './sqlite';
 
 const router = express.Router();
 
-// Mount SQLite routes
-router.use('/', sqliteRoutes);
-
-// API info endpoint
-router.get('/', (req, res) => {
+router.get('/', (_req, res) => {
   res.json({
-    message: 'QueryBot SQLite Server API',
+    message: 'QueryBot SQLite Server',
     version: '1.0.0',
     endpoints: {
-      'POST /upload-file': 'Upload SQLite or CSV file',
-      'POST /execute-query': 'Execute SQL query on uploaded database',
-      'GET /get-schema/:uuid': 'Get database schema information',
+      'POST /upload-file': 'Upload a SQLite or CSV file',
+      'POST /execute-query': 'Execute a read-only SQL query',
+      'GET /get-schema/:uuid': 'Get schema text and structured table metadata',
+      'GET /databases/:uuid': 'Check that a dataset still exists',
+      'GET /databases/:uuid/preview/:table': 'Preview the first rows of a table',
+      'DELETE /databases/:uuid': 'Delete a dataset',
+      'GET /health': 'Health check',
     },
   });
 });
+
+router.use('/', sqliteRoutes);
 
 export default router;

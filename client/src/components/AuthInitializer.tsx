@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAppDispatch } from '@/hooks/redux';
 import { checkAuthentication } from '@/store/slices/authSlice';
 
@@ -6,43 +6,23 @@ interface AuthInitializerProps {
   children: React.ReactNode;
 }
 
+/**
+ * Establishes the session once at start-up.
+ *
+ * Children render immediately: `ProtectedRoute` handles the loading state for
+ * guarded routes, so public pages need not wait behind a full-screen spinner.
+ */
 const AuthInitializer = ({ children }: AuthInitializerProps) => {
   const dispatch = useAppDispatch();
-  const [initialCheckComplete, setInitialCheckComplete] = useState(false);
-  const [isChecking, setIsChecking] = useState(false);
+  // React 18+ mounts twice in development; this keeps it to a single request.
+  const hasChecked = useRef(false);
 
   useEffect(() => {
-    // Perform initial auth check only once
-    const performInitialCheck = async () => {
-      if (isChecking) return; // Prevent multiple simultaneous calls
-      
-      setIsChecking(true);
-      try {
-        console.log('🔍 AuthInitializer: Performing initial auth check');
-        await dispatch(checkAuthentication(true)); // Use initial check to avoid interceptors
-        console.log('✅ AuthInitializer: Initial auth check complete');
-      } catch (error) {
-        console.log('❌ AuthInitializer: Auth check failed', error);
-      } finally {
-        setIsChecking(false);
-        setInitialCheckComplete(true);
-      }
-    };
+    if (hasChecked.current) return;
+    hasChecked.current = true;
 
-    performInitialCheck();
-  }, [dispatch]); // Only depend on dispatch, not isChecking to avoid re-runs
-
-  // Show loading spinner only during the initial auth check
-  if (!initialCheckComplete) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-          <p className="text-gray-600">Initializing...</p>
-        </div>
-      </div>
-    );
-  }
+    void dispatch(checkAuthentication(true));
+  }, [dispatch]);
 
   return <>{children}</>;
 };

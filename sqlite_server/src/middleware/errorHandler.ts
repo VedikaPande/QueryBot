@@ -1,45 +1,46 @@
 import { Request, Response, NextFunction } from 'express';
+import { config } from '../config';
+import { logger, errorMessage } from '../utils/logger';
 
 export interface AppError extends Error {
   statusCode?: number;
-  status?: string;
-  isOperational?: boolean;
 }
 
+/**
+ * Terminal error handler.
+ *
+ * Client errors (4xx) return their message; server errors return a generic one
+ * so internal details such as filesystem paths never reach the response body.
+ */
 export const errorHandler = (
   err: AppError,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ): void => {
-  // Set default error values
-  let error = { ...err };
-  error.message = err.message;
+  const statusCode = err.statusCode && err.statusCode >= 400 ? err.statusCode : 500;
 
-  // Log error
-  console.error('Error:', err);
-
-  // Mongoose bad ObjectId
-  if (err.name === 'CastError') {
-    const message = 'Resource not found';
-    error = { message, statusCode: 404 } as AppError;
+  if (statusCode >= 500) {
+    logger.error('Unhandled request error', {
+      method: req.method,
+      path: req.originalUrl,
+      error: errorMessage(err),
+      stack: err.stack,
+    });
+  } else {
+    logger.warn('Request error', {
+      method: req.method,
+      path: req.originalUrl,
+      statusCode,
+      error: errorMessage(err),
+    });
   }
 
-  // Mongoose duplicate key
-  if (err.name === 'MongoError' && (err as any).code === 11000) {
-    const message = 'Duplicate field value entered';
-    error = { message, statusCode: 400 } as AppError;
-  }
-
-  // Mongoose validation error
-  if (err.name === 'ValidationError') {
-    const message = Object.values((err as any).errors).map((val: any) => val.message);
-    error = { message: message.join(', '), statusCode: 400 } as AppError;
-  }
-
-  res.status(error.statusCode || 500).json({
+  res.status(statusCode).json({
     success: false,
-    error: error.message || 'Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+    message: statusCode >= 500 ? 'Internal server error' : errorMessage(err),
+    data: null,
+    ...(config.isProduction ? {} : { stack: err.stack }),
+    timestamp: new Date().toISOString(),
   });
 };

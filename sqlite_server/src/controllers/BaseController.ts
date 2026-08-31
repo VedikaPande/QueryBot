@@ -1,31 +1,41 @@
 import { Request, Response, NextFunction } from 'express';
 import { ApiResponse } from '../types/common';
 
+type Handler = (req: Request, res: Response, next: NextFunction) => unknown;
+
 export class BaseController {
-  /**
-   * Send error response
-   */
-  protected error(
-    res: Response,
-    message: string,
-    statusCode: number = 500,
-    errors?: any
-  ): Response {
-    const response: ApiResponse<null> = {
-      success: false,
+  /** Send a successful response using the shared envelope. */
+  protected success<T>(res: Response, data: T, message = 'OK', statusCode = 200): Response {
+    const response: ApiResponse<T> = {
+      success: true,
       message,
-      data: null,
-      errors,
+      data,
       timestamp: new Date().toISOString(),
     };
     return res.status(statusCode).json(response);
   }
 
-  /**
-   * Async handler wrapper to catch errors
-   */
-  protected asyncHandler = (fn: Function) => 
-    (req: Request, res: Response, next: NextFunction) => {
+  /** Send an error response using the shared envelope. */
+  protected error(
+    res: Response,
+    message: string,
+    statusCode = 500,
+    errors?: unknown
+  ): Response {
+    const response: ApiResponse<null> = {
+      success: false,
+      message,
+      data: null,
+      ...(errors === undefined ? {} : { errors }),
+      timestamp: new Date().toISOString(),
+    };
+    return res.status(statusCode).json(response);
+  }
+
+  /** Forward rejected promises to the Express error handler. */
+  protected asyncHandler =
+    (fn: Handler) =>
+    (req: Request, res: Response, next: NextFunction): void => {
       Promise.resolve(fn(req, res, next)).catch(next);
     };
 }

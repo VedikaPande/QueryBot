@@ -1,118 +1,74 @@
-import React from 'react';
-import { Loader2, Brain, Database, BarChart3, FileText } from 'lucide-react';
+import { Check, Loader2 } from 'lucide-react';
+import { STEP_LABELS, WORKFLOW_STEPS } from '@/types/playground';
+import type { WorkflowStep } from '@/types/playground';
+import { cn } from '@/lib/utils';
 
 interface ProcessingLoaderProps {
-  currentStep?: string;
-  message?: string;
+  currentStep?: WorkflowStep;
 }
 
-const ProcessingLoader: React.FC<ProcessingLoaderProps> = ({ 
-  currentStep = 'Processing', 
-  message = 'Analyzing your question...' 
-}) => {
-  const stepOrder = [
-    'classify_question',
-    'parse_question', 
-    'generate_sql',
-    'validate_and_fix_sql',
-    'execute_sql',
-    'format_results',
-    'choose_visualization',
-    'generate_chart',
-    'generate_insights',
-    'finalize_response'
-  ];
+/**
+ * Progress indicator for a running analysis.
+ *
+ * Steps are driven by the shared `WORKFLOW_STEPS` list, so the sequence cannot
+ * drift from the agent's actual graph the way two hand-maintained copies did.
+ */
+const ProcessingLoader = ({ currentStep }: ProcessingLoaderProps) => {
+  const currentIndex = currentStep ? WORKFLOW_STEPS.indexOf(currentStep) : -1;
+  const percent = Math.round(((currentIndex + 1) / WORKFLOW_STEPS.length) * 100);
 
-  const getCurrentStepIndex = () => {
-    const index = stepOrder.indexOf(currentStep.toLowerCase());
-    return index === -1 ? 0 : index;
-  };
-
-  const getStepIcon = (step: string) => {
-    switch (step.toLowerCase()) {
-      case 'classify_question':
-      case 'classification':
-        return <Brain className="w-6 h-6 text-blue-500" />;
-      case 'parse_question':
-      case 'generate_sql':
-      case 'validate_and_fix_sql':
-      case 'execute_sql':
-        return <Database className="w-6 h-6 text-green-500" />;
-      case 'choose_visualization':
-      case 'generate_chart':
-        return <BarChart3 className="w-6 h-6 text-purple-500" />;
-      case 'format_results':
-      case 'generate_insights':
-      case 'finalize_response':
-        return <FileText className="w-6 h-6 text-orange-500" />;
-      default:
-        return <Loader2 className="w-6 h-6 text-[#009B72] animate-spin" />;
-    }
-  };
-
-  const formatStepName = (step: string) => {
-    return step
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, l => l.toUpperCase());
-  };
-
-  const currentStepIndex = getCurrentStepIndex();
-  const progressPercentage = Math.round(((currentStepIndex + 1) / stepOrder.length) * 100);
+  // Show a window around the current step rather than all twelve at once.
+  const windowStart = Math.max(0, currentIndex - 1);
+  const visibleSteps = WORKFLOW_STEPS.slice(windowStart, windowStart + 4);
 
   return (
-    <div className="flex flex-col items-center justify-center flex-1 text-[#333A3F] py-12">
-      <div className="flex flex-col items-center space-y-6 max-w-md mx-auto">
-        {/* Main loader */}
-        <div className="relative">
-          <div className="w-16 h-16 border-4 border-[#DDF7E3] border-t-[#009B72] rounded-full animate-spin"></div>
-          <div className="absolute inset-0 flex items-center justify-center">
-            {getStepIcon(currentStep)}
-          </div>
-        </div>
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
+      <div className="relative">
+        <Loader2 className="text-primary h-10 w-10 animate-spin" />
+      </div>
 
-        {/* Status text */}
-        <div className="text-center space-y-3">
-          <h3 className="text-lg font-semibold text-[#009B72]">
-            {formatStepName(currentStep)}
-          </h3>
-          <p className="text-sm text-gray-600 max-w-xs">
-            {message}
-          </p>
-          
-          {/* Progress indicator */}
-          <div className="flex items-center justify-center space-x-2 mt-2">
-            <span className="text-xs text-gray-500">Step {currentStepIndex + 1} of {stepOrder.length}</span>
-            <div className="w-24 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-[#009B72] rounded-full transition-all duration-500 ease-out"
-                style={{ width: `${progressPercentage}%` }}
-              />
-            </div>
-            <span className="text-xs text-gray-500">{progressPercentage}%</span>
-          </div>
+      <div className="w-full max-w-xs">
+        <div className="mb-2 flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">Analysing</span>
+          <span className="text-muted-foreground tabular-nums">{Math.max(percent, 5)}%</span>
         </div>
-
-        {/* Progress dots */}
-        <div className="flex space-x-2">
-          {[0, 1, 2].map((dot) => (
-            <div
-              key={dot}
-              className="w-2 h-2 bg-[#009B72] rounded-full animate-pulse"
-              style={{
-                animationDelay: `${dot * 0.2}s`,
-                animationDuration: '1s'
-              }}
-            />
-          ))}
-        </div>
-
-        {/* Tips */}
-        <div className="bg-[#DDF7E3] rounded-lg p-4 text-center max-w-sm">
-          <p className="text-xs text-[#333A3F] opacity-75">
-            💡 <strong>Tip:</strong> The more specific your question, the better insights I can provide!
-          </p>
+        <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+          <div
+            className="bg-primary h-full rounded-full transition-[width] duration-500 ease-out"
+            style={{ width: `${Math.max(percent, 5)}%` }}
+          />
         </div>
       </div>
+
+      <ul className="flex w-full max-w-xs flex-col gap-1.5">
+        {visibleSteps.map((step) => {
+          const index = WORKFLOW_STEPS.indexOf(step);
+          const isDone = currentIndex > index;
+          const isCurrent = currentIndex === index;
+
+          return (
+            <li
+              key={step}
+              className={cn(
+                'flex items-center gap-2 text-sm transition-colors',
+                isCurrent ? 'text-foreground font-medium' : 'text-muted-foreground',
+                !isDone && !isCurrent && 'opacity-50'
+              )}
+            >
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                {isDone ? (
+                  <Check className="text-primary h-3.5 w-3.5" />
+                ) : isCurrent ? (
+                  <span className="bg-primary h-1.5 w-1.5 animate-pulse rounded-full" />
+                ) : (
+                  <span className="bg-muted-foreground/40 h-1.5 w-1.5 rounded-full" />
+                )}
+              </span>
+              {STEP_LABELS[step]}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 };

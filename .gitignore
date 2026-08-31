@@ -1,0 +1,35 @@
+# Compose secrets. Only .env.example is tracked.
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Test artefacts
+coverage/
+playwright-report/
+test-results/
+.pytest_cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

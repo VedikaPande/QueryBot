@@ -1,0 +1,177 @@
+# QueryBot — full stack.
+#
+#   cp .env.example .env      # then set GROQ_API_KEY
+#   docker compose up --build
+#   open http://localhost:8080
+#
+# Only the client (8080) is published. Postgres, Redis, the dataset service and
+# the agent stay on the internal network and are not reachable from the host,
+# which mirrors how this would be deployed.
+
+name: querybot
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  # ---------------------------------------------------------------------------
+  # Data stores
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:17-alpine
+    <<: *restart
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-querybot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-querybot}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Dependants wait on this, so it must report genuine readiness to accept
+      # queries rather than merely that the process has started.
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-querybot} -d ${POSTGRES_DB:-querybot}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
+  redis:
+    image: redis:7-alpine
+    <<: *restart
+    # Cache and rate-limit counters only: an eviction policy is correct here,
+    # and there is nothing worth persisting to disk.
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------
+  # Application services
+  # ---------------------------------------------------------------------------
+  sqlite-service:
+    build:
+      context: ./sqlite_server
+    <<: *restart
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?SERVICE_TOKEN is required}
+      # Reached only from inside the network; no browser origin applies.
+      CORS_ORIGINS: http://localhost:8080
+      UPLOAD_DIR: /app/uploads
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-104857600}
+      DB_FILE_RETENTION: ${DB_FILE_RETENTION:-14400000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - uploads_data:/app/uploads
+    networks: [backend]
+
+  agent:
+    build:
+      context: ./langgraph_agent
+    <<: *restart
+    environment:
+      # Any one of the four providers can serve the model calls. Only the key for
+      # the selected one is needed; the agent refuses to start with a clear
+      # message naming the variable when it is missing, so none is required here.
+      LLM_PROVIDER: ${LLM_PROVIDER:-groq}
+      LLM_MODEL: ${LLM_MODEL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      SQLITE_SERVICE_URL: http://sqlite-service:3001
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?SERVICE_TOKEN is required}
+      CHART_DOCKER_ENABLED: ${CHART_DOCKER_ENABLED:-false}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+    volumes:
+      # Chart rendering launches a sibling container on the host daemon, which
+      # requires the socket. That grants effective root on the host, so it is
+      # off by default; set CHART_DOCKER_ENABLED=true only if you accept that.
+      # Everything except chart images works with it disabled.
+      - ${DOCKER_SOCKET:-/dev/null}:/var/run/docker.sock
+    depends_on:
+      sqlite-service:
+        condition: service_healthy
+    networks: [backend]
+
+  server:
+    build:
+      context: ./server
+    <<: *restart
+    environment:
+      FLASK_ENV: production
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-querybot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-querybot}
+      REDIS_URL: redis://redis:6379/0
+      # nginx proxies /api on the same origin, so the browser never makes a
+      # cross-origin request and this is only a defensive allow-list.
+      CORS_ORIGINS: http://localhost:8080
+      SQLITE_SERVICE_URL: http://sqlite-service:3001
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?SERVICE_TOKEN is required}
+      LANGGRAPH_API_URL: http://agent:8000
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Terminated at nginx in this topology, so cookies would never be sent if
+      # Secure were enforced. Set to true behind real TLS.
+      JWT_COOKIE_SECURE: ${JWT_COOKIE_SECURE:-false}
+    depends_on:
+      # Waits for the schema to exist before serving a single request.
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      sqlite-service:
+        condition: service_healthy
+    networks: [backend]
+
+  # Applies migrations, then exits. `depends_on: service_completed_successfully`
+  # keeps the API from starting against a schema that has not been created.
+  migrate:
+    build:
+      context: ./server
+    environment:
+      FLASK_ENV: production
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-querybot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-querybot}
+      CORS_ORIGINS: http://localhost:8080
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?SERVICE_TOKEN is required}
+    command: ['flask', '--app', 'main.py', 'db', 'upgrade']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+    networks: [backend]
+
+  client:
+    build:
+      context: ./client
+      args:
+        # Relative, so the browser calls the nginx origin it was served from.
+        VITE_API_BASE_URL: /api
+    <<: *restart
+    ports:
+      - '${CLIENT_PORT:-8080}:8080'
+    depends_on:
+      server:
+        condition: service_healthy
+    networks: [backend]
+
+volumes:
+  postgres_data:
+  uploads_data:
+
+networks:
+  backend:
+    driver: bridge

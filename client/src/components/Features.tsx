@@ -40,7 +40,7 @@ const Features = () => {
           {features.map((feature, index) => (
             <div
               key={index}
-              className="glass-card p-6 rounded-2xl hover:shadow-[0_20px_60px_-15px_rgba(0,168,120,0.3)] transition-all duration-300 hover:-translate-y-2 group animate-slide-up"
+              className="glass-card animate-slide-up group rounded-2xl p-6 transition-all duration-300 hover:-translate-y-2 hover:[box-shadow:var(--shadow-elevated)]"
               style={{ animationDelay: `${index * 100}ms` }}
             >
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">

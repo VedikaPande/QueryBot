@@ -44,14 +44,14 @@ const Workflow = () => {
               className="relative animate-slide-up"
               style={{ animationDelay: `${index * 150}ms` }}
             >
-              <div className="glass-card p-8 rounded-2xl text-center hover:shadow-[0_20px_60px_-15px_rgba(0,168,120,0.3)] transition-all duration-300 hover:-translate-y-2">
+              <div className="glass-card rounded-2xl p-8 text-center transition-all duration-300 hover:-translate-y-2 hover:[box-shadow:var(--shadow-elevated)]">
                 <div className="relative inline-flex items-center justify-center mb-6">
                   <div className="absolute inset-0 bg-gradient-to-br from-primary to-accent opacity-20 rounded-full blur-xl" />
                   <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center">
                     <step.icon className="w-10 h-10 text-white" />
                   </div>
                 </div>
-                
+
                 <div className="text-6xl font-bold gradient-text mb-4">{step.number}</div>
                 <h3 className="text-2xl font-semibold mb-3">{step.title}</h3>
                 <p className="text-muted-foreground">{step.description}</p>

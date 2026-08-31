@@ -1,77 +1,79 @@
 """
-QueryBot Agent - A LangGraph-based SQL query and data visualization agent.
+QueryBot agent.
 
-This agent can:
-1. Parse natural language questions about databases
-2. Generate and execute SQL queries
-3. Format results into human-readable answers
-4. Recommend appropriate visualizations
-5. Format data for visualization libraries
+Public entry point wrapping the LangGraph workflow: takes a natural-language
+question about an uploaded dataset and returns an answer, a chart, a table and
+supporting analysis.
 """
+import logging
+from typing import Any, Dict, Optional
 
 from querybot_agent.workflow_manager import WorkflowManager
-from typing import Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class QueryBotAgent:
-    """Main interface for the QueryBot agent."""
-    
-    def __init__(self):
-        """Initialize the QueryBot agent with a workflow manager."""
+    """Answers questions about a dataset."""
+
+    def __init__(self) -> None:
         self.workflow_manager = WorkflowManager()
-    
-    def query(self, question: str, database_uuid: str) -> Dict[str, Any]:
+
+    def query(
+        self,
+        question: str,
+        database_uuid: str,
+        history: Optional[list[dict]] = None,
+        previous: Optional[dict] = None,
+    ) -> Dict[str, Any]:
         """
-        Process a natural language question about a database.
-        
+        Answer one question.
+
         Args:
-            question (str): The natural language question to answer
-            database_uuid (str): UUID of the database to query
-            
+            question: The natural-language question.
+            database_uuid: Identifier of the dataset to query.
+            history: Prior conversation turns, used to resolve follow-ups.
+            previous: The last answered turn. Supplying it lets a follow-up such
+                as "make it a pie chart" restyle that result instead of asking the
+                data again.
+
         Returns:
-            Dict containing:
-            - answer: Human-readable answer to the question with insights and narrative
-            - visualization: Recommended visualization type
-            - visualization_reason: Explanation for the visualization choice
-            - chart_image_base64: Base64 encoded chart image data (if any)
-            - chart_generation_error: Error message if chart generation failed
-            - insights: Data insights with emoji indicators
-            - formatted_table: Formatted data table (if applicable)
-            - data_narrative: Narrative explanation of the data
-            - insights_error: Error message if insights generation failed
+            The answer plus the SQL, chart, table and insights that support it.
         """
         try:
-            result = self.workflow_manager.run_sql_agent(question, database_uuid)
-            return result
-        except Exception as e:
+            return self.workflow_manager.run_sql_agent(question, database_uuid, history, previous)
+        except Exception as exc:  # noqa: BLE001 - returned to the caller, not raised
+            logger.exception('Query failed')
             return {
-                "answer": f"I encountered an error while processing your question: {str(e)}",
-                "visualization": "none",
-                "visualization_reason": "Error occurred during processing",
-                "chart_image_base64": None,
-                "chart_generation_error": str(e),
-                "insights": "📊 Error generating insights.",
-                "formatted_table": None,
-                "data_narrative": "Unable to process due to error.",
-                "insights_error": str(e)
+                'answer': f'Something went wrong while answering that: {exc}',
+                'sql_query': None,
+                'visualization': 'none',
+                'visualization_reason': '',
+                'chart_image_base64': None,
+                'chart_generation_error': None,
+                'insights': None,
+                'formatted_table': None,
+                'data_narrative': None,
+                'insights_error': None,
+                'results': [],
+                'result_columns': [],
+                'error': str(exc),
+                'suggested_questions': [],
+                'data_quality_notes': [],
+                'intent': 'new',
+                'chart_spec': {},
             }
-    
+
     def get_workflow_graph(self):
-        """Get the compiled workflow graph for deployment or inspection."""
+        """Return the compiled graph for deployment or inspection."""
         return self.workflow_manager.compile_graph()
 
 
-# Convenience function for direct usage
-def ask_question(question: str, database_uuid: str) -> Dict[str, Any]:
-    """
-    Convenience function to ask a question directly.
-    
-    Args:
-        question (str): The natural language question
-        database_uuid (str): UUID of the database
-        
-    Returns:
-        Dict with answer, chart image base64 data, and visualization information
-    """
-    agent = QueryBotAgent()
-    return agent.query(question, database_uuid)
+def ask_question(
+    question: str,
+    database_uuid: str,
+    history: Optional[list[dict]] = None,
+    previous: Optional[dict] = None,
+) -> Dict[str, Any]:
+    """Answer a single question without managing an agent instance."""
+    return QueryBotAgent().query(question, database_uuid, history, previous)

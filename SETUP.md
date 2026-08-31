@@ -1,316 +1,244 @@
-#  QueryBot Setup Guide
+# QueryBot setup guide
 
-This guide will walk you through setting up QueryBot on your local development environment.
+Everything you need to run QueryBot locally, plus what changes for production.
 
-## 📋 Prerequisites
+> **Just want it running?** Use Docker instead of the steps below:
+>
+> ```bash
+> make setup     # writes .env with generated secrets
+> # add your GROQ_API_KEY to .env
+> make up        # http://localhost:8080
+> ```
+>
+> The rest of this guide covers running the four services natively, which is
+> what you want when developing one of them.
 
-Before you begin, ensure you have the following installed on your system:
+## Prerequisites
 
-- **Node.js** >= 16.0.0 ([Download](https://nodejs.org/))
-- **Python** >= 3.12 ([Download](https://www.python.org/downloads/))
-- **UV** (Python package manager) ([Install Guide](https://docs.astral.sh/uv/getting-started/installation/))
-- **Git** ([Download](https://git-scm.com/downloads))
-- **Docker** (optional, for containerized deployment) ([Download](https://www.docker.com/products/docker-desktop))
+| Tool | Version | Notes |
+|------|---------|-------|
+| [Node.js](https://nodejs.org/) | 20+ | Client and SQLite service |
+| [Python](https://www.python.org/downloads/) | 3.12+ | Flask API and agent |
+| [uv](https://docs.astral.sh/uv/getting-started/installation/) | latest | Python dependency manager |
+| [Docker](https://www.docker.com/products/docker-desktop) | optional | Chart rendering sandbox |
+| [Groq API key](https://console.groq.com) | — | Required; the agent cannot run without it |
 
-### Verify Prerequisites
+Without Docker the app still works — answers, tables and insights are unaffected —
+but chart requests report that chart rendering is unavailable. Set
+`CHART_DOCKER_ENABLED=false` to skip the Docker probe entirely.
+
+Verify your toolchain:
 
 ```bash
-# Check Node.js version
-node --version
-
-# Check Python version
-python --version
-
-# Check UV installation
-uv --version
-
-# Check Git installation
-git --version
-
-# Check Docker installation (optional)
-docker --version
+node --version && python --version && uv --version && docker --version
 ```
 
-## 🔧 Installation
-
-### 1. Clone the Repository
+## 1. Clone and install
 
 ```bash
 git clone https://github.com/VedikaPande/QueryBot.git
 cd QueryBot
+
+cd client          && npm install && cd ..
+cd sqlite_server   && npm install && cd ..
+cd server          && uv sync     && cd ..
+cd langgraph_agent && uv sync     && cd ..
 ```
 
-### 2. Set Up Each Service
+## 2. Configure
 
-#### Frontend (React + TypeScript + Vite)
+Each service ships a `.env.example`. Copy it and fill in the values:
 
 ```bash
-cd client
-npm install
-cd ..
+cp client/.env.example          client/.env
+cp server/.env.example          server/.env
+cp sqlite_server/.env.example   sqlite_server/.env
+cp langgraph_agent/.env.example langgraph_agent/.env
 ```
 
-#### Authentication Server (Flask + SQLAlchemy)
+### The three values that matter most
+
+**`SERVICE_TOKEN`** — must be **identical** in `server/.env`, `sqlite_server/.env`
+and `langgraph_agent/.env`. It is how the internal services authenticate to each
+other. Generate one with:
 
 ```bash
-cd server
-uv sync
-cd ..
+python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-#### SQLite Server (Node.js + Express)
+**`SECRET_KEY` / `JWT_SECRET_KEY`** in `server/.env` — two *different* random
+values. Production refuses to start if they are unset.
 
-```bash
-cd sqlite_server
-npm install
-cd ..
-```
+**A model provider key** in `langgraph_agent/.env`. Groq is the default because
+it is the cheapest and fastest for this workload — get a key from
+[console.groq.com](https://console.groq.com). To use another provider, set
+`LLM_PROVIDER` and its key instead:
 
-#### LangGraph Agent (Python + LangGraph)
+| `LLM_PROVIDER` | Key | Default model |
+| --- | --- | --- |
+| `groq` | `GROQ_API_KEY` | `openai/gpt-oss-120b` |
+| `openai` | `OPENAI_API_KEY` | `gpt-5` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-5` |
+| `google` | `GOOGLE_API_KEY` | `gemini-2.5-pro` |
 
-```bash
-cd langgraph_agent
-uv sync
-cd ..
-```
+Set `LLM_MODEL` to override the default. The agent refuses to start with a
+message naming the variable if the selected provider's key is missing.
 
-## 🔑 Environment Configuration
+### Minimum working configuration
 
-Create `.env` files in the appropriate directories with the following configurations:
-
-### `server/.env` (Flask Authentication Server)
-
+`server/.env`
 ```env
-# Database Configuration
-# For PostgreSQL (recommended for production):
-DATABASE_URL=postgresql://username:password@host:port/database
-
-# For SQLite (development):
-DATABASE_URL=sqlite:///querybot.db
-
-# Security Keys (CHANGE IN PRODUCTION)
-SECRET_KEY=your-super-secret-key-change-in-production-min-32-chars
-JWT_SECRET_KEY=your-jwt-secret-key-change-in-production-min-32-chars
-
-# Environment
 FLASK_ENV=development
-
-# LangGraph Configuration
-LANGSMITH_API_KEY=your-langsmith-api-key-from-langsmith-console
+SECRET_KEY=<random-48-chars>
+JWT_SECRET_KEY=<a-different-random-48-chars>
+DATABASE_URL=sqlite:///querybot.db
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+SQLITE_SERVICE_URL=http://localhost:3001
+SERVICE_TOKEN=<shared-token>
 LANGGRAPH_API_URL=http://localhost:8000
-
-# CORS Settings (adjust for production)
-CORS_ORIGINS=["http://localhost:5173", "http://127.0.0.1:5173"]
 ```
 
-### `sqlite_server/.env` (SQLite Server)
-
+`sqlite_server/.env`
 ```env
-# Server Configuration
 PORT=3001
 NODE_ENV=development
-
-# CORS Configuration
-CORS_ORIGIN=*
-
-# File Upload Settings
-MAX_FILE_SIZE=104857600          # 100MB in bytes
-DB_CLEANUP_INTERVAL=3600000      # 1 hour in milliseconds
-DB_FILE_RETENTION=14400000       # 4 hours in milliseconds
-
-# Logging
-LOG_LEVEL=info
+SERVICE_TOKEN=<the same shared token>
+CORS_ORIGINS=http://localhost:5173
 ```
 
-### `langgraph_agent/.env` (LangGraph Agent)
-
+`langgraph_agent/.env`
 ```env
-# Groq Configuration
-GROQ_API_KEY=your-groq-api-key-from-console-groq-com
-
-# LangSmith Configuration (for monitoring and debugging)
-LANGSMITH_API_KEY=your-langsmith-api-key-from-langsmith-console
-LANGSMITH_TRACING=true
-LANGSMITH_PROJECT=querybot-agent
-
-# Model Configuration
-GROQ_MODEL=llama-3.1-70b-versatile
-TEMPERATURE=0.1
-
-# Chart Generation Settings
-CHART_OUTPUT_DIR=./generated_charts
-MAX_CHART_WIDTH=1200
-MAX_CHART_HEIGHT=800
+LLM_PROVIDER=groq
+GROQ_API_KEY=<your key>
+SQLITE_SERVICE_URL=http://localhost:3001
+SERVICE_TOKEN=<the same shared token>
+CHART_DOCKER_ENABLED=true
 ```
 
-### `client/.env` (React Frontend)
-
+`client/.env`
 ```env
-# API Configuration
 VITE_API_BASE_URL=http://localhost:5000/api
-VITE_SQLITE_API_BASE_URL=http://localhost:3001
-
-# Application Configuration
-VITE_APP_NAME=QueryBot
-VITE_APP_VERSION=1.0.0
-
-# Development Configuration
-VITE_LOG_LEVEL=info
 ```
 
-## 🗂️ Database Setup
+## 3. Create the database tables
 
-### For SQLite (Development)
-
-The SQLite database will be created automatically when you first run the Flask server.
-
-### For PostgreSQL (Production)
-
-1. **Install PostgreSQL** ([Download](https://www.postgresql.org/download/))
-
-2. **Create a database:**
-   ```sql
-   CREATE DATABASE querybot;
-   CREATE USER querybot_user WITH PASSWORD 'your_password';
-   GRANT ALL PRIVILEGES ON DATABASE querybot TO querybot_user;
-   ```
-
-3. **Update the DATABASE_URL in `server/.env`:**
-   ```env
-   DATABASE_URL=postgresql://querybot_user:your_password@localhost:5432/querybot
-   ```
-
-4. **Run database migrations:**
-   ```bash
-   cd server
-   uv run flask --app main.py db upgrade
-   ```
-
-## 🎯 Running the Application
-
-### Development Mode (Recommended)
-
-Start each service in a separate terminal:
-
-#### Terminal 1: SQLite Server
-```bash
-cd sqlite_server
-npm run dev
-```
-**Status**: Server running on http://localhost:3001
-
-#### Terminal 2: Flask Authentication Server
 ```bash
 cd server
-uv run python main.py
-```
-**Status**: Server running on http://localhost:5000
-
-#### Terminal 3: LangGraph Agent
-```bash
-cd langgraph_agent
-langgraph dev --host 0.0.0.0 --port 8000
-```
-**Status**: Agent running on http://localhost:8000
-
-#### Terminal 4: React Frontend
-```bash
-cd client
-npm run dev
-```
-**Status**: Frontend running on http://localhost:5173
-
-### Production Mode
-
-#### 1. Build all services:
-
-```bash
-# Build Frontend
-cd client
-npm run build
-
-# Build SQLite Server
-cd ../sqlite_server
-npm run build
-
-# No build needed for Flask and LangGraph (Python services)
+uv run flask --app main.py db upgrade
+cd ..
 ```
 
-#### 2. Start services:
+SQLite works out of the box for development. For PostgreSQL:
 
-```bash
-# Start Frontend (Preview mode)
-cd client
-npm run preview &
-
-# Start SQLite Server
-cd ../sqlite_server
-npm start &
-
-# Start Flask Server
-cd ../server
-FLASK_ENV=production uv run python main.py &
-
-# Start LangGraph Agent
-cd ../langgraph_agent
-langgraph dev --host 0.0.0.0 --port 8000 &
+```sql
+CREATE DATABASE querybot;
+CREATE USER querybot_user WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE querybot TO querybot_user;
 ```
 
-### Docker Deployment
+then set `DATABASE_URL=postgresql://querybot_user:your_password@localhost:5432/querybot`
+and run the migration again.
 
-For containerized deployment:
+## 4. Build the chart sandbox (optional)
+
+Only needed for charts. The agent builds the image automatically on first use,
+but you can do it ahead of time:
 
 ```bash
 cd langgraph_agent
-docker-compose up --build
+docker build -f querybot_agent/Dockerfile.chart-executor -t querybot-chart-executor querybot_agent/
 ```
 
-This will start the LangGraph agent in a Docker container with chart generation capabilities.
+## 5. Run
 
-## 🌐 Access Points & Health Checks
-
-Once all services are running, verify they're working:
-
-### Service URLs
-- **Frontend**: http://localhost:5173
-- **Flask API**: http://localhost:5000
-- **SQLite Server**: http://localhost:3001
-- **LangGraph Agent**: http://localhost:8000
-
-### Health Check Commands
+Four terminals, in this order — the agent and the API both depend on the SQLite
+service being up:
 
 ```bash
-# Check Flask server
-curl http://localhost:5000/health
+# Terminal 1 — SQLite dataset service
+cd sqlite_server && npm run dev            # http://localhost:3001
 
-# Check SQLite server
-curl http://localhost:3001/health
+# Terminal 2 — Flask API
+cd server && uv run python main.py         # http://localhost:5000
 
-# Check LangGraph agent
-curl http://localhost:8000/health
+# Terminal 3 — LangGraph agent
+cd langgraph_agent && uv run langgraph dev --port 8000
 
-# Check if frontend is accessible
-curl http://localhost:5173
+# Terminal 4 — React client
+cd client && npm run dev                   # http://localhost:5173
 ```
 
-Expected responses should return status 200 with health information.
+Open http://localhost:5173, create an account, upload a CSV and ask a question.
 
-### API Keys Setup
+### Health checks
 
-#### Getting Groq API Key
-1. Visit [console.groq.com](https://console.groq.com)
-2. Sign up or log in
-3. Navigate to API Keys section
-4. Create a new API key
-5. Copy and paste into `langgraph_agent/.env`
+```bash
+curl http://localhost:3001/health          # {"status":"ok",...}
+curl http://localhost:5000/health          # {"status":"healthy"}
+curl http://localhost:5000/api/langgraph/health
+```
 
-#### Getting LangSmith API Key
-1. Visit [smith.langchain.com](https://smith.langchain.com)
-2. Sign up or log in
-3. Go to Settings > API Keys
-4. Create a new API key
-5. Copy and paste into `langgraph_agent/.env` and `server/.env`
+## Tests
+
+```bash
+cd sqlite_server   && npm test
+cd server          && uv run pytest
+cd langgraph_agent && uv run pytest
+cd client          && npm run lint && npx tsc --noEmit -p tsconfig.app.json
+```
+
+## Production
+
+Build the frontend and the SQLite service:
+
+```bash
+cd client && npm run build          # static files in dist/
+cd sqlite_server && npm run build   # compiled JS in dist/
+```
+
+Set `FLASK_ENV=production` and `NODE_ENV=production`. Both services validate
+their configuration at start-up and **refuse to boot** if any of the following
+is wrong, rather than running in a silently insecure state:
+
+- `SECRET_KEY` or `JWT_SECRET_KEY` unset
+- `CORS_ORIGINS` unset or set to `*`
+- `SERVICE_TOKEN` unset
+- `DATABASE_URL` still pointing at SQLite
+
+Additional production requirements:
+
+- **Serve over HTTPS.** Cookies are issued with `Secure` in production and browsers will drop them over plain HTTP.
+- **Do not expose ports 3001 or 8000 publicly.** Only the Flask API and the static client should be reachable.
+- **Run Flask under a real WSGI server** (`gunicorn`, `waitress`) rather than the development server.
+- **Persist the uploads directory** if you want datasets to survive a restart, or accept that they are ephemeral.
+
+## Troubleshooting
+
+**"Unauthorized" from the SQLite service**
+`SERVICE_TOKEN` differs between services. It must be byte-identical in all three
+`.env` files.
+
+**"Dataset not found" right after uploading**
+Uploads expire after `DB_FILE_RETENTION` (4 hours by default). Re-upload, or
+raise the value.
+
+**Charts never appear**
+Check that Docker is running (`docker ps`). The agent logs the reason at start-up.
+Set `CHART_DOCKER_ENABLED=false` to suppress chart attempts entirely.
+
+**`sqlite3.OperationalError: unable to open database file`**
+A relative `DATABASE_URL` is resolved against the Flask instance folder. Use an
+absolute path, e.g. `sqlite:///C:/path/to/querybot.db`.
+
+**CORS errors in the browser console**
+The frontend origin must appear in `CORS_ORIGINS` in `server/.env`. It cannot be
+`*`, because authentication uses cookies.
+
+**"The query was adjusted before running"**
+Expected: the agent validated the generated SQL and corrected it. Open the SQL tab
+to see what changed, and edit and re-run it if the correction was wrong.
 
 ---
 
-**Congratulations! 🎉** Your QueryBot development environment should now be ready to use.
+Something still not working? Check each service's logs — all four log at start-up
+what they resolved their configuration to.
